@@ -1,0 +1,4 @@
+/**:
+  ros__parameters:
+    pixel_format: "mjpeg2nv12"
+    zero_copy: false

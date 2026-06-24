@@ -1,0 +1,5 @@
+/**:
+  ros__parameters:
+    video_device: "/dev/video0"
+    frame_id: "camera"
+    camera_name: "camera_video0"
