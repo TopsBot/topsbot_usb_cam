@@ -1,0 +1,41 @@
+# topsbot_usb_cam 参数参考（不自动加载）
+#
+# 本文件仅供查阅与复制，launch 默认不会加载它。
+# 命名：{pixel_format}_{宽}x{高}_{模式}.yaml — 默认启动见 mjpeg2rgb_640x480_zc.yaml
+#
+# 运行中查看生效值：
+#   ros2 param list /usb_cam
+#   ros2 param describe /usb_cam <name>
+#   ros2 param dump /usb_cam
+
+/**:
+  ros__parameters:
+  # --- 设备与采集 ---
+    video_device: "/dev/video0"       # V4L2 设备
+    image_width: 640
+    image_height: 480
+    framerate: 15
+    io_method: "mmap"                 # mmap | read | userptr
+    av_device_format: "YUV422P"
+
+  # --- 输出（话题名 / TbMsg 类型由节点根据 zero_copy + pixel_format 自动选择）---
+    pixel_format: "mjpeg2rgb"         # mjpeg2rgb | mjpeg2nv12 | mjpeg(raw)
+    zero_copy: true
+
+  # --- 坐标与标定 ---
+    frame_id: "usb_cam"
+    camera_name: "test_camera"
+    camera_info_url: "package://topsbot_usb_cam/config/camera_info.yaml"
+
+  # --- V4L2 调参（-1 表示不修改）---
+    brightness: -1
+    contrast: -1
+    saturation: -1
+    sharpness: -1
+    gain: -1
+    auto_white_balance: true
+    white_balance: 4000
+    autoexposure: true
+    exposure: 100
+    autofocus: false
+    focus: -1
