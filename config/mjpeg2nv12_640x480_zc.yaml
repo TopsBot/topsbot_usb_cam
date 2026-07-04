@@ -1,0 +1,26 @@
+# pixel_format=mjpeg2nv12 — mjpeg2nv12_640x480_zc.yaml
+
+/**:
+  ros__parameters:
+    video_device: "/dev/video0"
+    image_width: 640
+    image_height: 480
+    framerate: 15
+    io_method: "mmap"
+    av_device_format: "YUV422P"
+    pixel_format: "mjpeg2nv12"
+    zero_copy: true
+    frame_id: "usb_cam"
+    camera_name: "test_camera"
+    camera_info_url: "package://topsbot_usb_cam/config/camera_info.yaml"
+    brightness: -1
+    contrast: -1
+    saturation: -1
+    sharpness: -1
+    gain: -1
+    auto_white_balance: true
+    white_balance: 4000
+    autoexposure: true
+    exposure: 100
+    autofocus: false
+    focus: -1
