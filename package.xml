@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>topsbot_usb_cam</name>
+  <version>0.3.0</version>
+  <description>TOPSBOT USB camera driver with tb_img_msgs zero-copy. Quick start: ros2 launch topsbot_usb_cam usb_cam.launch.py (see share/topsbot_usb_cam/QUICKSTART.md).</description>
+
+  <maintainer email="developer@topfuture.com">TOPSBOT</maintainer>
+  <license>Apache-2.0</license>
+
+  <url type="repository">https://github.com/ros-drivers/usb_cam</url>
+
+  <buildtool_depend>ament_cmake_auto</buildtool_depend>
+  <buildtool_depend>pkg-config</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>camera_info_manager</depend>
+  <depend>image_transport</depend>
+  <depend>tb_img_msgs</depend>
+  <depend>v4l-utils</depend>
+  <depend>ffmpeg</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
