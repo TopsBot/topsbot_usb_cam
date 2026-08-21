@@ -26,6 +26,8 @@
 #include "tb_img_msgs/msg/tb_msg540_p.hpp"
 #include "topsbot_usb_cam/topsbot_usb_cam.hpp"
 
+#include <BufferAllocator/BufferAllocatorWrapper.h>
+
 namespace topsbot_usb_cam
 {
 
@@ -82,6 +84,7 @@ template<typename MsgT>
 bool publish_loaned_tb_img(
   const typename rclcpp::Publisher<MsgT>::SharedPtr & publisher,
   UsbCam * camera,
+  BufferAllocator * allocator,
   int32_t & frame_index,
   const rclcpp::Logger & logger)
 {
@@ -108,6 +111,15 @@ bool publish_loaned_tb_img(
   camera->get_image(reinterpret_cast<char *>(msg.data.data()));
   msg.data_size = data_size;
 
+  // dmabuf backend: expose the loaned payload phys so hardware consumers
+  // (NPU / PP / encoder) can LOOKUP it and skip the copy. 0 = backend not
+  // active, consumers fall back to copying.
+  uint64_t payload_phys = 0;
+  if (allocator != nullptr) {
+    DmabufHeapLookupPhysByPtr(allocator, msg.data.data(), &payload_phys);
+  }
+  msg.phys_addr = payload_phys;
+
   const auto stamp = camera->get_image_timestamp();
   msg.time_stamp.sec = stamp.tv_sec;
   msg.time_stamp.nanosec = stamp.tv_nsec;
@@ -124,7 +136,8 @@ public:
     rclcpp::Node * node,
     const std::string & topic,
     TbImgProfile profile)
-  : profile_(profile)
+  : profile_(profile),
+    allocator_(CreateDmabufHeapBufferAllocator())
   {
     const auto qos = rclcpp::SensorDataQoS();
     switch (profile_) {
@@ -140,6 +153,13 @@ public:
     }
   }
 
+  ~LoanedTbImgPublisher()
+  {
+    if (allocator_ != nullptr) {
+      FreeDmabufHeapBufferAllocator(allocator_);
+    }
+  }
+
   TbImgProfile profile() const
   {
     return profile_;
@@ -150,19 +170,20 @@ public:
     switch (profile_) {
       case TbImgProfile::MSG_480P:
         return publish_loaned_tb_img<tb_img_msgs::msg::TbMsg480P>(
-          pub_480_, camera, frame_index, logger);
+          pub_480_, camera, allocator_, frame_index, logger);
       case TbImgProfile::MSG_540P:
         return publish_loaned_tb_img<tb_img_msgs::msg::TbMsg540P>(
-          pub_540_, camera, frame_index, logger);
+          pub_540_, camera, allocator_, frame_index, logger);
       case TbImgProfile::MSG_1080P:
         return publish_loaned_tb_img<tb_img_msgs::msg::TbMsg1080P>(
-          pub_1080_, camera, frame_index, logger);
+          pub_1080_, camera, allocator_, frame_index, logger);
     }
     return false;
   }
 
 private:
   TbImgProfile profile_;
+  BufferAllocator * allocator_{nullptr};
   rclcpp::Publisher<tb_img_msgs::msg::TbMsg480P>::SharedPtr pub_480_;
   rclcpp::Publisher<tb_img_msgs::msg::TbMsg540P>::SharedPtr pub_540_;
   rclcpp::Publisher<tb_img_msgs::msg::TbMsg1080P>::SharedPtr pub_1080_;

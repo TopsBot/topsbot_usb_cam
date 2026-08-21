@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 (2026-08-20)
+
+### Added
+
+- FastDDS dmabuf `phys_addr` on zero-copy `TbMsg` / `TbJpegFrame` publishes, so downstream hardware consumers can LOOKUP the loaned payload.
+- Dmabuf test nodes for the zero-copy path.
+
 ## 0.3.0 (2026-07-24)
 
 ### Changed

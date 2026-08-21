@@ -27,6 +27,14 @@ ament_auto_find_build_dependencies()
 find_package(OpenCV REQUIRED)
 find_package(tb_img_msgs REQUIRED)
 
+if(CMAKE_SYSROOT)
+  set(TOPSBOT_TACV_ROOT "${CMAKE_SYSROOT}/usr/local")
+else()
+  set(TOPSBOT_TACV_ROOT "/usr/local")
+endif()
+set(TOPSBOT_TACV_INCLUDE_DIR "${TOPSBOT_TACV_ROOT}/include")
+set(TOPSBOT_TACV_LIB_DIR "${TOPSBOT_TACV_ROOT}/lib")
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(avcodec REQUIRED libavcodec)
 pkg_check_modules(avutil REQUIRED libavutil)
@@ -39,13 +47,17 @@ add_library(${PROJECT_NAME}_lib SHARED
 target_include_directories(${PROJECT_NAME}_lib PUBLIC
   include
   ${OpenCV_INCLUDE_DIRS}
+  ${TOPSBOT_TACV_INCLUDE_DIR}
 )
+
+target_link_directories(${PROJECT_NAME}_lib PUBLIC ${TOPSBOT_TACV_LIB_DIR})
 
 target_link_libraries(${PROJECT_NAME}_lib
   ${avcodec_LIBRARIES}
   ${avutil_LIBRARIES}
   ${swscale_LIBRARIES}
   ${OpenCV_LIBRARIES}
+  dmabufheap
 )
 
 ament_export_libraries(${PROJECT_NAME}_lib)
@@ -60,6 +72,26 @@ rclcpp_components_register_node(${PROJECT_NAME}_node
   PLUGIN "topsbot_usb_cam::TopsbotUsbCamNode"
   EXECUTABLE ${PROJECT_NAME}_node_exe
 )
+
+# 测试工具：文件回放发布器 + 轻量消费者（吞吐压力测试）
+ament_auto_add_executable(${PROJECT_NAME}_jpeg_replay
+  src/topsbot_jpeg_replay_node.cpp
+)
+target_link_libraries(${PROJECT_NAME}_jpeg_replay ${PROJECT_NAME}_lib dmabufheap)
+
+
+# raw NV12 回放 + 轻量消费者
+
+ament_auto_add_executable(${PROJECT_NAME}_img_sink
+  src/topsbot_img_sink_node.cpp
+)
+target_link_libraries(${PROJECT_NAME}_img_sink ${PROJECT_NAME}_lib)
+
+# R1: 纯解码转发节点（JPEG -> 硬件解码 -> M1 零拷贝转发）
+ament_auto_add_executable(${PROJECT_NAME}_jpeg_to_img
+  src/topsbot_jpeg_to_img_node.cpp
+)
+target_link_libraries(${PROJECT_NAME}_jpeg_to_img ${PROJECT_NAME}_lib dmabufheap tacocv tacosys)
 
 add_executable(${PROJECT_NAME}
   src/topsbot_usb_cam_exec.cpp

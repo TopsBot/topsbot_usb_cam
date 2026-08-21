@@ -24,8 +24,25 @@
 #include "tb_img_msgs/msg/tb_jpeg_frame.hpp"
 #include "topsbot_usb_cam/topsbot_usb_cam.hpp"
 
+#include <BufferAllocator/BufferAllocatorWrapper.h>
+
 namespace topsbot_usb_cam
 {
+
+// Resolve the physical address of a loaned payload inside the carveout
+// FastDDS DataSharing segment (if the dmabuf backend is active). Returns 0
+// when the backend is not enabled or the pointer is not in a segment.
+inline uint64_t loaned_payload_phys(const void * data_ptr)
+{
+  BufferAllocator * allocator = CreateDmabufHeapBufferAllocator();
+  if (!allocator) {
+    return 0;
+  }
+  uint64_t phys = 0;
+  const int ret = DmabufHeapLookupPhysByPtr(allocator, data_ptr, &phys);
+  FreeDmabufHeapBufferAllocator(allocator);
+  return (ret == 0) ? phys : 0;
+}
 
 inline void fill_tb_jpeg_encoding(
   std::array<uint8_t, 12> & encoding_field, const std::string & encoding)
@@ -77,6 +94,12 @@ public:
       return false;
     }
     msg.data_size = data_size;
+
+    // dmabuf backend: publish the payload phys so hardware consumers can wrap
+    // it into an fd (LOOKUP_BY_PHYS) and skip the copy into a fresh buffer.
+    // 0 = backend not active, consumers fall back to copying.
+    const uint64_t payload_phys = loaned_payload_phys(msg.data.data());
+    msg.phys_addr = payload_phys;
 
     const auto stamp = camera->get_image_timestamp();
     msg.time_stamp.sec = stamp.tv_sec;
