@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.1 (2026-09-24)
+
+### Added
+
+- 1280x720 MJPEG→NV12 sample configs (`mjpeg2nv12_1280x720_sensor.yaml`, `mjpeg2nv12_1280x720_zc.yaml`).
+
+### Fixed
+
+- Link taCV codec libraries and declare libtacv system dependencies.
+
+### Changed
+
+- Update script location for release tooling.
+
 ## 0.4.0 (2026-08-20)
 
 ### Added
@@ -42,8 +56,6 @@
 ### Added
 
 - MJPEG zero-copy publishing via `TbJpegFrame` (`presets/mjpeg_zerocopy.yaml`).
-
-## Unreleased
 
 ### Changed
 

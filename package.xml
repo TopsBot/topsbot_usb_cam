@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>topsbot_usb_cam</name>
-  <version>0.4.0</version>
+  <version>0.4.1</version>
   <description>TOPSBOT USB camera driver with tb_img_msgs zero-copy. Quick start: ros2 launch topsbot_usb_cam usb_cam.launch.py (see share/topsbot_usb_cam/QUICKSTART.md).</description>
 
   <maintainer email="developer@topsfuture.com">TOPSBOT</maintainer>
@@ -22,6 +22,12 @@
   <depend>tb_img_msgs</depend>
   <depend>v4l-utils</depend>
   <depend>ffmpeg</depend>
+  <depend>libopencv-dev</depend>
+  <depend>libtacv</depend>
+  <depend>libdmabufheap</depend>
+  <depend>libtasys</depend>
+  <depend>libdec24</depend>
+  <depend>libenc24</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

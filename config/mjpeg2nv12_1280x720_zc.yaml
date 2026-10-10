@@ -1,0 +1,29 @@
+# pixel_format=mjpeg2nv12 — mjpeg2nv12_1280x720_zc.yaml
+#
+# Zero-copy input for SegFormer. 1280x720 can be resized down to 1024x512
+# by the hardware preprocessing path.
+
+/**:
+  ros__parameters:
+    video_device: "/dev/video0"
+    image_width: 1280
+    image_height: 720
+    framerate: 10
+    io_method: "mmap"
+    av_device_format: "YUV422P"
+    pixel_format: "mjpeg2nv12"
+    zero_copy: true
+    frame_id: "usb_cam"
+    camera_name: "test_camera"
+    camera_info_url: "package://topsbot_usb_cam/config/camera_info.yaml"
+    brightness: -1
+    contrast: -1
+    saturation: -1
+    sharpness: -1
+    gain: -1
+    auto_white_balance: true
+    white_balance: 4000
+    autoexposure: true
+    exposure: 100
+    autofocus: false
+    focus: -1

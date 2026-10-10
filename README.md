@@ -63,7 +63,7 @@ Cross-compilation for MES20 is done in the `topsbot_cc` Docker environment (x86 
 From the `topsbot_cc` repo root:
 
 ```bash
-sudo topsbot_ws/tools/start_topsbot_cross_build_docker.sh
+sudo topsbot_ws/tools/scripts/start_topsbot_cross_build_docker.sh
 ```
 
 The working directory inside the container is `/mnt/topsbot_cc/topsbot_ws`.
@@ -87,7 +87,7 @@ Inside the container (first build or when packages are missing):
 **3. Build**
 
 ```bash
-./tools/build.sh -s topsbot_usb_cam
+./tools/scripts/build.sh -s topsbot_usb_cam
 ```
 
 On success, output looks like:

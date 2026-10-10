@@ -472,16 +472,19 @@ void UsbCam::init_device()
     throw strerror(errno);
   }
 
-  if (!stream_params.parm.capture.capability && V4L2_CAP_TIMEPERFRAME) {
-    throw "V4L2_CAP_TIMEPERFRAME not supported";
-  }
-
-  // TODO(lucasw) need to get list of valid numerator/denominator pairs
-  // and match closest to what user put in.
-  stream_params.parm.capture.timeperframe.numerator = 1;
-  stream_params.parm.capture.timeperframe.denominator = m_framerate;
-  if (topsbot_usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_S_PARM), &stream_params) < 0) {
-    throw std::invalid_argument("Couldn't set camera framerate");
+  if (stream_params.parm.capture.capability & V4L2_CAP_TIMEPERFRAME) {
+    // TODO(lucasw) need to get list of valid numerator/denominator pairs
+    // and match closest to what user put in.
+    stream_params.parm.capture.timeperframe.numerator = 1;
+    stream_params.parm.capture.timeperframe.denominator = m_framerate;
+    if (topsbot_usb_cam::utils::xioctl(
+        m_fd, static_cast<int>(VIDIOC_S_PARM), &stream_params) < 0)
+    {
+      throw std::invalid_argument("Couldn't set camera framerate");
+    }
+  } else {
+    std::cerr << "V4L2 device does not support time-per-frame control; "
+              << "using driver default" << std::endl;
   }
 
   switch (m_io) {

@@ -63,7 +63,7 @@ ros2 launch topsbot_usb_cam usb_cam.launch.py -s
 在 `topsbot_cc` 仓库根目录执行：
 
 ```bash
-sudo topsbot_ws/tools/start_topsbot_cross_build_docker.sh
+sudo topsbot_ws/tools/scripts/start_topsbot_cross_build_docker.sh
 ```
 
 容器启动后工作目录为 `/mnt/topsbot_cc/topsbot_ws`。
@@ -87,7 +87,7 @@ sudo topsbot_ws/tools/start_topsbot_cross_build_docker.sh
 **3. 编译**
 
 ```bash
-./tools/build.sh -s topsbot_usb_cam
+./tools/scripts/build.sh -s topsbot_usb_cam
 ```
 
 编译成功时输出类似：
