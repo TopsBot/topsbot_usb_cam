@@ -69,13 +69,16 @@ typedef enum
   IO_METHOD_MMAP,
   /// @brief memory buffers allocated in the user space
   IO_METHOD_USERPTR,
+  /// @brief userspace carveout fds imported with V4L2_MEMORY_DMABUF
+  IO_METHOD_DMABUF,
   IO_METHOD_UNKNOWN,
 } io_method_t;
 
 struct buffer
 {
-  char * start;
-  size_t length;
+  char * start{nullptr};
+  size_t length{0};
+  int fd{-1};
 };
 
 
@@ -137,6 +140,8 @@ inline io_method_t io_method_from_string(const std::string & str)
     return io_method_t::IO_METHOD_READ;
   } else if (str == "userptr") {
     return io_method_t::IO_METHOD_USERPTR;
+  } else if (str == "dmabuf") {
+    return io_method_t::IO_METHOD_DMABUF;
   } else {
     return io_method_t::IO_METHOD_UNKNOWN;
   }

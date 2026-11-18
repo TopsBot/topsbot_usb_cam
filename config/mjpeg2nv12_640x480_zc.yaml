@@ -5,9 +5,9 @@
     video_device: "/dev/video0"
     image_width: 640
     image_height: 480
-    framerate: 15
-    io_method: "mmap"
-    av_device_format: "YUV422P"
+    framerate: 30
+    io_method: "dmabuf"
+    av_device_format: "YUVJ420P"
     pixel_format: "mjpeg2nv12"
     zero_copy: true
     frame_id: "usb_cam"

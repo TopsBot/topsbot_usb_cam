@@ -67,7 +67,8 @@ ament_auto_add_library(${PROJECT_NAME}_node SHARED
   src/topsbot_usb_cam_node.cpp
 )
 
-target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME}_lib)
+target_link_libraries(${PROJECT_NAME}_node
+  ${PROJECT_NAME}_lib dmabufheap tacocv taco_jpegdec taco_ppvdec enc24 tacosys)
 
 rclcpp_components_register_node(${PROJECT_NAME}_node
   PLUGIN "topsbot_usb_cam::TopsbotUsbCamNode"

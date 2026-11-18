@@ -36,6 +36,7 @@ extern "C" {
 }
 
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <algorithm>
 #include <sstream>
@@ -54,6 +55,8 @@ extern "C" {
 #include "topsbot_usb_cam/formats/yuyv.hpp"
 #include "topsbot_usb_cam/formats/m420.hpp"
 #include "topsbot_usb_cam/formats/nv12.hpp"
+
+#include <BufferAllocator/BufferAllocatorWrapper.h>
 
 
 namespace topsbot_usb_cam
@@ -307,6 +310,23 @@ public:
     return m_is_capturing;
   }
 
+  /// Raw DMA publish: REQBUFS only. The caller QBUFs loan fds and starts the stream.
+  void use_loan_import(unsigned int count);
+
+  /// DQBUF one imported carveout. Does not requeue; call requeue_dmabuf after
+  /// the JPEG bytes are no longer read. Returns false when no frame is ready.
+  bool dequeue_dmabuf(
+    int & fd, unsigned int & index, uint32_t & bytes_used, const uint8_t * & data);
+
+  void requeue_dmabuf(unsigned int index);
+
+  /// QBUF an external dmabuf at a REQBUFS index. Used by the raw-MJPEG loan queue.
+  bool queue_import_dmabuf(unsigned int index, int fd, uint32_t length);
+
+  void start_import_stream();
+
+  uint32_t capture_sizeimage() const;
+
   inline time_t get_epoch_time_shift_us()
   {
     return m_epoch_time_shift_us;
@@ -397,6 +417,7 @@ private:
   void init_read();
   void init_mmap();
   void init_userp();
+  void init_dmabuf();
   void init_device();
 
   void open_device();
@@ -423,6 +444,9 @@ private:
 
   int64_t m_buffer_time_us;
   bool m_is_capturing;
+  bool m_loan_import{false};
+  unsigned int m_loan_import_count{2};
+  BufferAllocator * m_dma_alloc{nullptr};
   int m_framerate;
   const time_t m_epoch_time_shift_us;
   std::vector<capture_format_t> m_supported_formats;

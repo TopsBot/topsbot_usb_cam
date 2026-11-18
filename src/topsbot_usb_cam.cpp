@@ -177,6 +177,8 @@ void UsbCam::read_frame()
         throw std::runtime_error("Unable to exchange buffer with driver");
       }
       return;
+    case io_method_t::IO_METHOD_DMABUF:
+      throw std::logic_error("DMABUF frames are dequeued by dequeue_dmabuf");
     case io_method_t::IO_METHOD_UNKNOWN:
       throw std::invalid_argument("IO method unknown");
   }
@@ -195,6 +197,7 @@ void UsbCam::stop_capturing()
       return;
     case io_method_t::IO_METHOD_MMAP:
     case io_method_t::IO_METHOD_USERPTR:
+    case io_method_t::IO_METHOD_DMABUF:
       type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
       if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, VIDIOC_STREAMOFF, &type)) {
         // Set capturing variable to true again, since stream was not stopped successfully
@@ -262,6 +265,30 @@ void UsbCam::start_capturing()
         throw std::runtime_error("Unable to start stream");
       }
       break;
+    case io_method_t::IO_METHOD_DMABUF:
+      if (m_loan_import) {
+        break;
+      }
+      for (i = 0; i < m_number_of_buffers; ++i) {
+        struct v4l2_buffer buf;
+        CLEAR(buf);
+
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_DMABUF;
+        buf.index = i;
+        buf.m.fd = m_buffers[i].fd;
+        buf.length = m_buffers[i].length;
+
+        if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_QBUF), &buf)) {
+          throw std::runtime_error("Unable to queue DMABUF");
+        }
+      }
+
+      type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+      if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, VIDIOC_STREAMON, &type)) {
+        throw std::runtime_error("Unable to start DMABUF stream");
+      }
+      break;
     case io_method_t::IO_METHOD_UNKNOWN:
       throw std::invalid_argument("IO method unknown");
   }
@@ -270,6 +297,22 @@ void UsbCam::start_capturing()
 
 void UsbCam::uninit_device()
 {
+  if (m_io == io_method_t::IO_METHOD_DMABUF && m_buffers) {
+    for (unsigned int i = 0; i < m_number_of_buffers; ++i) {
+      if (m_buffers[i].start != nullptr) {
+        munmap(m_buffers[i].start, m_buffers[i].length);
+        m_buffers[i].start = nullptr;
+      }
+      if (m_buffers[i].fd >= 0) {
+        close(m_buffers[i].fd);
+        m_buffers[i].fd = -1;
+      }
+    }
+  }
+  if (m_dma_alloc != nullptr) {
+    FreeDmabufHeapBufferAllocator(m_dma_alloc);
+    m_dma_alloc = nullptr;
+  }
   m_buffers.reset();
 }
 
@@ -374,6 +417,163 @@ void UsbCam::init_userp()
   }
 }
 
+void UsbCam::init_dmabuf()
+{
+  const uint32_t sizeimage = m_image.v4l2_fmt.fmt.pix.sizeimage;
+  if (sizeimage == 0) {
+    throw std::runtime_error("V4L2 sizeimage is 0");
+  }
+
+  struct v4l2_requestbuffers req;
+  CLEAR(req);
+  req.count = m_loan_import ? m_loan_import_count : m_number_of_buffers;
+  req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  req.memory = V4L2_MEMORY_DMABUF;
+
+  if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_REQBUFS), &req)) {
+    throw std::runtime_error("Device does not support DMABUF import");
+  }
+  if (req.count < 1 || req.count > m_number_of_buffers) {
+    throw std::runtime_error("Driver granted an unexpected DMABUF slot count");
+  }
+  m_number_of_buffers = req.count;
+
+  if (m_loan_import) {
+    for (unsigned int i = 0; i < m_number_of_buffers; ++i) {
+      m_buffers[i].fd = -1;
+      m_buffers[i].start = nullptr;
+      m_buffers[i].length = sizeimage;
+    }
+    return;
+  }
+
+  m_dma_alloc = CreateDmabufHeapBufferAllocator();
+  if (m_dma_alloc == nullptr) {
+    throw std::runtime_error("CreateDmabufHeapBufferAllocator failed");
+  }
+
+  for (unsigned int i = 0; i < m_number_of_buffers; ++i) {
+    const int dma_fd = DmabufHeapAlloc(m_dma_alloc, "carveout-heap", sizeimage);
+    if (dma_fd < 0) {
+      throw std::runtime_error("DmabufHeapAlloc(carveout-heap) failed");
+    }
+    void * mapped = mmap(
+      nullptr, sizeimage, PROT_READ | PROT_WRITE, MAP_SHARED, dma_fd, 0);
+    if (mapped == MAP_FAILED) {
+      close(dma_fd);
+      throw std::runtime_error("mmap of capture carveout failed");
+    }
+    m_buffers[i].fd = dma_fd;
+    m_buffers[i].start = reinterpret_cast<char *>(mapped);
+    m_buffers[i].length = sizeimage;
+  }
+}
+
+bool UsbCam::dequeue_dmabuf(
+  int & fd, unsigned int & index, uint32_t & bytes_used, const uint8_t * & data)
+{
+  if (m_io != io_method_t::IO_METHOD_DMABUF) {
+    throw std::logic_error("dequeue_dmabuf requires io_method=dmabuf");
+  }
+
+  fd_set fds;
+  struct timeval tv;
+  FD_ZERO(&fds);
+  FD_SET(m_fd, &fds);
+  tv.tv_sec = 5;
+  tv.tv_usec = 0;
+
+  const int ready = select(m_fd + 1, &fds, nullptr, nullptr, &tv);
+  if (ready == -1) {
+    if (errno == EINTR) {
+      return false;
+    }
+    throw std::runtime_error("select failed while waiting for DMABUF");
+  }
+  if (ready == 0) {
+    throw std::runtime_error("select timeout while waiting for DMABUF");
+  }
+
+  struct v4l2_buffer buf;
+  CLEAR(buf);
+  buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  buf.memory = V4L2_MEMORY_DMABUF;
+  if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_DQBUF), &buf)) {
+    if (errno == EAGAIN) {
+      return false;
+    }
+    throw std::runtime_error("Unable to dequeue DMABUF");
+  }
+  if (buf.index >= m_number_of_buffers) {
+    throw std::runtime_error("DQBUF index out of range");
+  }
+
+  m_image.stamp = topsbot_usb_cam::utils::calc_img_timestamp(buf.timestamp, m_epoch_time_shift_us);
+  m_image.bytes_used = buf.bytesused;
+  fd = m_buffers[buf.index].fd;
+  index = buf.index;
+  bytes_used = buf.bytesused;
+  data = reinterpret_cast<const uint8_t *>(m_buffers[buf.index].start);
+  return true;
+}
+
+void UsbCam::use_loan_import(unsigned int count)
+{
+  m_loan_import = true;
+  m_loan_import_count = count < 1 ? 1 : count;
+}
+
+bool UsbCam::queue_import_dmabuf(unsigned int index, int fd, uint32_t length)
+{
+  if (!m_loan_import || index >= m_number_of_buffers || fd < 0 || length == 0) {
+    return false;
+  }
+  struct v4l2_buffer buf;
+  CLEAR(buf);
+  buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  buf.memory = V4L2_MEMORY_DMABUF;
+  buf.index = index;
+  buf.m.fd = fd;
+  buf.length = length;
+  if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_QBUF), &buf)) {
+    return false;
+  }
+  return true;
+}
+
+void UsbCam::start_import_stream()
+{
+  if (!m_loan_import) {
+    throw std::logic_error("start_import_stream requires the loan import queue");
+  }
+  enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, VIDIOC_STREAMON, &type)) {
+    throw std::runtime_error("Unable to start DMABUF stream");
+  }
+}
+
+uint32_t UsbCam::capture_sizeimage() const
+{
+  return m_image.v4l2_fmt.fmt.pix.sizeimage;
+}
+
+void UsbCam::requeue_dmabuf(unsigned int index)
+{
+  if (index >= m_number_of_buffers || m_buffers[index].fd < 0) {
+    throw std::runtime_error("requeue_dmabuf index is not a capture buffer");
+  }
+  struct v4l2_buffer buf;
+  CLEAR(buf);
+  buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  buf.memory = V4L2_MEMORY_DMABUF;
+  buf.index = index;
+  buf.m.fd = m_buffers[index].fd;
+  buf.length = m_buffers[index].length;
+  if (-1 == topsbot_usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_QBUF), &buf)) {
+    throw std::runtime_error("Unable to requeue DMABUF");
+  }
+}
+
 void UsbCam::init_device()
 {
   struct v4l2_capability cap;
@@ -400,6 +600,7 @@ void UsbCam::init_device()
       break;
     case io_method_t::IO_METHOD_MMAP:
     case io_method_t::IO_METHOD_USERPTR:
+    case io_method_t::IO_METHOD_DMABUF:
       if (!(cap.capabilities & V4L2_CAP_STREAMING)) {
         throw std::invalid_argument("Device does not support streaming i/o");
       }
@@ -496,6 +697,9 @@ void UsbCam::init_device()
       break;
     case io_method_t::IO_METHOD_USERPTR:
       init_userp();
+      break;
+    case io_method_t::IO_METHOD_DMABUF:
+      init_dmabuf();
       break;
     case io_method_t::IO_METHOD_UNKNOWN:
       // TODO(flynneva): log something

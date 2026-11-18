@@ -12,6 +12,11 @@
 #   Empty (default) — start 2 cameras (cam0/cam1).
 #   N — explicitly start cam0 … cam(N-1), where 1 <= N <= max_channel_count.
 #   Four cameras: channel_count:=4 cam2_video_device:=... cam3_video_device:=...
+#
+# Resolution, framerate, pixel_format, and zero_copy come from params_file.
+# Pass image_width / image_height / framerate / pixel_format / zero_copy only
+# to override that yaml for every camera. Per-camera device, frame_id, and
+# camera_name stay on the camN_* arguments, because one yaml cannot name two devices.
 
 import os
 
@@ -41,6 +46,32 @@ def _resolve_params_path(pkg_share: str, params_file: str) -> str:
 
 def _optional_int(value: str):
     return int(value) if value else None
+
+
+def _optional_bool(value: str):
+    if not value:
+        return None
+    return value.lower() in ('true', '1', 'yes')
+
+
+def _shared_overrides(context) -> dict:
+    overrides = {}
+    image_width = _optional_int(LaunchConfiguration('image_width').perform(context))
+    if image_width is not None:
+        overrides['image_width'] = image_width
+    image_height = _optional_int(LaunchConfiguration('image_height').perform(context))
+    if image_height is not None:
+        overrides['image_height'] = image_height
+    framerate = _optional_int(LaunchConfiguration('framerate').perform(context))
+    if framerate is not None:
+        overrides['framerate'] = framerate
+    pixel_format = LaunchConfiguration('pixel_format').perform(context)
+    if pixel_format:
+        overrides['pixel_format'] = pixel_format
+    zero_copy = _optional_bool(LaunchConfiguration('zero_copy').perform(context))
+    if zero_copy is not None:
+        overrides['zero_copy'] = zero_copy
+    return overrides
 
 
 def _channel_count(context) -> int:
@@ -74,20 +105,19 @@ def _camera_node(context, index: int):
             f'usb_cam_multi.launch: cam{index}_video_device is required '
             f'when channel_count enables cam{index}')
 
+    per_camera = {
+        'video_device': device,
+        'frame_id': LaunchConfiguration(f'cam{index}_frame_id').perform(context),
+        'camera_name': LaunchConfiguration(f'cam{index}_camera_name').perform(context),
+    }
+    per_camera.update(_shared_overrides(context))
     return Node(
         package='topsbot_usb_cam',
         executable='topsbot_usb_cam',
         name='usb_cam',
         namespace=f'cam{index}',
         output='screen',
-        parameters=[
-            params_path,
-            {
-                'video_device': device,
-                'frame_id': LaunchConfiguration(f'cam{index}_frame_id').perform(context),
-                'camera_name': LaunchConfiguration(f'cam{index}_camera_name').perform(context),
-            },
-        ],
+        parameters=[params_path, per_camera],
         arguments=['--ros-args', '--log-level', 'info'],
     )
 
@@ -104,6 +134,31 @@ def generate_launch_description():
             'params_file',
             default_value='mjpeg2rgb_640x480_zc.yaml',
             description='Shared params yaml for all cameras',
+        ),
+        DeclareLaunchArgument(
+            'image_width',
+            default_value='',
+            description='Override yaml image_width for every camera when non-empty',
+        ),
+        DeclareLaunchArgument(
+            'image_height',
+            default_value='',
+            description='Override yaml image_height for every camera when non-empty',
+        ),
+        DeclareLaunchArgument(
+            'framerate',
+            default_value='',
+            description='Override yaml framerate for every camera when non-empty',
+        ),
+        DeclareLaunchArgument(
+            'pixel_format',
+            default_value='',
+            description='Override yaml pixel_format for every camera when non-empty',
+        ),
+        DeclareLaunchArgument(
+            'zero_copy',
+            default_value='',
+            description='Override yaml zero_copy for every camera when non-empty (true/false)',
         ),
         DeclareLaunchArgument(
             'max_channel_count',

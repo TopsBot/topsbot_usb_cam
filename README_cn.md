@@ -128,9 +128,12 @@ ros2 launch topsbot_usb_cam usb_cam.launch.py \
 启动成功时，日志类似：
 
 ```text
-Starting 'test_camera' (/dev/video0) at 640x480 via mmap (mjpeg2rgb) at 15 FPS, zero_copy=true
+Starting 'test_camera' (/dev/video0) at 640x480 via dmabuf (mjpeg2rgb) at 30 FPS, zero_copy=true
 Publishing loaned tb_img_msgs on 'tbmem_img'
+mjpeg2rgb DMABUF capture: hardware decode and CSC, then copy RGB into the SHM loan
 ```
+
+内置 yaml 的采集方式是 V4L2 `io_method=dmabuf`。`mjpeg2nv12` / `mjpeg2rgb` 走硬件解码（RGB 再做 CSC）。未设置 `FASTDDS_DMABUF_BACKEND` 时，结果拷入共享内存贷款，`phys_addr` 为 0。发布端和订阅端都 `export FASTDDS_DMABUF_BACKEND=1` 时，硬件直接写入 carveout 贷款，`phys_addr` 非 0。Cyclone DDS 不支持该后端，使用前要 `unset FASTDDS_DMABUF_BACKEND`。`mmap`、`read`、`userptr` 仍可显式指定，但是旧采集路径。
 
 ## 修改分辨率与图像格式
 
@@ -138,7 +141,7 @@ Publishing loaned tb_img_msgs on 'tbmem_img'
 
 ### 修改分辨率、帧率
 
-通过 launch 参数覆盖默认值（默认 640×480 @ 15fps）：
+通过 launch 参数覆盖默认值（内置 640×480 配置为 @ 30fps）：
 
 ```bash
 # 1280×720 @ 30fps，其余保持默认 yaml
@@ -293,7 +296,7 @@ ros2 launch topsbot_usb_cam usb_cam_multi.launch.py \
 | `video_device` | 摄像头设备 | string | `/dev/video0` |
 | `image_width` | 图像宽度 | int | `640` |
 | `image_height` | 图像高度 | int | `480` |
-| `framerate` | 帧率（整数） | int | `15` |
+| `framerate` | 帧率（整数）；空则沿用 yaml | int | （空，内置 640×480 为 `30`） |
 | `frame_id` | 坐标系名称 | string | `usb_cam` |
 | `pixel_format` | 像素格式，覆盖 yaml | string | （空，沿用 yaml） |
 | `setup_shm` | 是否配置零拷贝 DDS 环境（按 `RMW_IMPLEMENTATION` 自动识别；Cyclone 时自动启停 `iox-roudi`） | bool | `true` |
@@ -310,7 +313,8 @@ ros2 launch topsbot_usb_cam usb_cam_multi.launch.py \
 | `video_device` | 设备路径 | string | `/dev/video0` |
 | `image_width` | 图像宽度 | int | `640` |
 | `image_height` | 图像高度 | int | `480` |
-| `framerate` | 帧率 | int | `15` |
+| `framerate` | 帧率 | int | `30` |
+| `io_method` | V4L2 采集方式。内置 yaml 为 `dmabuf`；未写 yaml 时节点回退 `mmap` | string | 见 yaml |
 | `pixel_format` | 像素格式 | string | 见 `params_file` yaml |
 | `zero_copy` | 是否零拷贝 | bool | 见 `params_file` yaml |
 | `frame_id` | 坐标系名称 | string | `usb_cam` |

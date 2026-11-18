@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 (2026-10-21)
+
+### Added
+
+- V4L2 `io_method=dmabuf` capture for `mjpeg2nv12`, `mjpeg2rgb`, raw MJPEG, and raw pixels.
+- Hardware JPEG decode into the zero-copy loan. `mjpeg2rgb` runs CSC after decode.
+- `FASTDDS_DMABUF_BACKEND=1`: decoder or CSC writes the carveout loan and `phys_addr` is non-zero. Unset: copy into the Fast DDS or Cyclone SHM loan and `phys_addr` is 0.
+- Raw MJPEG and raw-pixel DMABUF loans can be queued directly into the capture buffers.
+
+### Changed
+
+- Built-in yaml files use `io_method: dmabuf`. Sample 640×480 configs use `framerate: 30`.
+- `mjpeg2nv12` sample `av_device_format` is `YUVJ420P`. Hardware decode does not read this field.
+- Node default `framerate` is 30. Shipped yaml overrides `io_method`; the C++ fallback remains `mmap`.
+- Drop per-frame timing logs on the decode and copy path.
+
 ## 0.4.1 (2026-09-24)
 
 ### Added

@@ -26,12 +26,14 @@ ls $(ros2 pkg prefix topsbot_usb_cam)/share/topsbot_usb_cam/config/*_*x*_*.yaml
 |------|--------------|------|----------|
 | `mjpeg2rgb_640x480_zc.yaml` | mjpeg2rgb | 零拷贝（**launch 默认**） | `/tbmem_img` |
 | `mjpeg2nv12_640x480_zc.yaml` | mjpeg2nv12 | 零拷贝 | `/tbmem_img` |
+| `mjpeg2nv12_1280x720_zc.yaml` | mjpeg2nv12 | 零拷贝 | `/tbmem_img` |
+| `mjpeg2nv12_1280x720_sensor.yaml` | mjpeg2nv12 | sensor_msgs | `/image_raw` |
 | `mjpeg_640x480_zc.yaml` | mjpeg | MJPEG 码流零拷贝 | `/tbmem_jpeg` |
 | `mjpeg2rgb_640x480_sensor.yaml` | mjpeg2rgb | sensor_msgs | `/image_raw` |
 | `mjpeg2nv12_640x480_sensor.yaml` | mjpeg2nv12 | sensor_msgs | `/image_raw` |
 | `mjpeg_640x480_compressed.yaml` | mjpeg | 压缩流 | `/image_raw/compressed` |
 
-话题名与 TbMsg 类型由节点根据 `pixel_format` + `zero_copy` 自动选择，**内置 yaml 无需填写** `tbmem_topic` / `tb_jpeg_topic` / `tb_img_profile`。
+话题名与 TbMsg 类型由节点根据 `pixel_format` + `zero_copy` 自动选择，**内置 yaml 无需填写** `tbmem_topic` / `tb_jpeg_topic` / `tb_img_profile`。内置 yaml 的 `io_method` 为 `dmabuf`，640×480 样例帧率为 30。
 
 ```bash
 ros2 launch topsbot_usb_cam usb_cam.launch.py params_file:=mjpeg2nv12_640x480_zc.yaml
@@ -71,6 +73,8 @@ ros2 launch topsbot_usb_cam usb_cam.launch.py params_file:=mjpeg2nv12_640x480_zc
 **Cyclone DDS：** 启用 `SharedMemory` 后底层走 iceoryx。`zc_env` 会在本机尚无 RouDi 时**自动启动** `iox-roudi`，并在本 launch 退出时**自动停止**（若启动前已有 RouDi 在跑，则复用且不负责关闭）。`tb_img_msgs` 为定长类型，满足 loaned 真零拷贝条件。
 
 多终端各自 launch 时，每个终端都需 `export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`；RouDi 由第一个带 `setup_shm` 的 launch 拉起即可。
+
+**Fast DDS DMABUF 贷款：** 发布端与订阅端都 `export FASTDDS_DMABUF_BACKEND=1` 时，零拷贝贷款落在 carveout，`phys_addr` 非 0，硬件解码（`mjpeg2rgb` 再加 CSC）直接写入贷款。未设置时走共享内存贷款，`phys_addr` 为 0。只设一端时，另一端收不到这笔贷款。Cyclone 不支持该后端，切到 Cyclone 前先 `unset FASTDDS_DMABUF_BACKEND`。
 
 | launch 参数 | 说明 | 默认 |
 |-------------|------|------|

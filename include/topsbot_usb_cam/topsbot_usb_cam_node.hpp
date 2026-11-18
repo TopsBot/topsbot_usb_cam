@@ -63,6 +63,10 @@ public:
   void publish();
   bool take_and_send_image();
   bool take_and_send_image_mjpeg();
+  bool take_and_send_dmabuf_nv12();
+  bool take_and_send_dmabuf_rgb();
+  bool take_and_send_dmabuf_jpeg();
+  bool take_and_send_dmabuf_raw();
   bool tbmem_take_and_send_image();
   bool tbjpeg_take_and_send_image();
 
@@ -94,6 +98,7 @@ public:
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr m_parameters_callback_handle;
 
   int32_t m_send_index{0};
+  BufferAllocator * m_nv12_alloc{nullptr};
   std::unique_ptr<LoanedTbImgPublisher> m_tbmem_publisher;
   std::unique_ptr<LoanedTbJpegPublisher> m_tbjpeg_publisher;
 };

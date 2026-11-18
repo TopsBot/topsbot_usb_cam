@@ -14,9 +14,9 @@
     video_device: "/dev/video0"       # V4L2 设备
     image_width: 640
     image_height: 480
-    framerate: 15
-    io_method: "mmap"                 # mmap | read | userptr
-    av_device_format: "YUV422P"
+    framerate: 30
+    io_method: "dmabuf"               # dmabuf。mmap | read | userptr 是旧采集路径
+    av_device_format: "YUV422P"       # 只给旧的 FFmpeg sws_scale 用，DMABUF 硬件解码不读它
 
   # --- 输出（话题名 / TbMsg 类型由节点根据 zero_copy + pixel_format 自动选择）---
     pixel_format: "mjpeg2rgb"         # mjpeg2rgb | mjpeg2nv12 | mjpeg(raw)

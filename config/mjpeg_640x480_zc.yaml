@@ -5,8 +5,8 @@
     video_device: "/dev/video0"
     image_width: 640
     image_height: 480
-    framerate: 15
-    io_method: "mmap"
+    framerate: 30
+    io_method: "dmabuf"
     av_device_format: "YUV422P"
     pixel_format: "mjpeg"
     zero_copy: true

@@ -128,9 +128,12 @@ ros2 launch topsbot_usb_cam usb_cam.launch.py \
 On success, logs look like:
 
 ```text
-Starting 'test_camera' (/dev/video0) at 640x480 via mmap (mjpeg2rgb) at 15 FPS, zero_copy=true
+Starting 'test_camera' (/dev/video0) at 640x480 via dmabuf (mjpeg2rgb) at 30 FPS, zero_copy=true
 Publishing loaned tb_img_msgs on 'tbmem_img'
+mjpeg2rgb DMABUF capture: hardware decode and CSC, then copy RGB into the SHM loan
 ```
+
+Built-in yaml files capture with V4L2 `io_method=dmabuf`. `mjpeg2nv12` and `mjpeg2rgb` use hardware decode (RGB then runs CSC). Without `FASTDDS_DMABUF_BACKEND`, the result is copied into the SHM loan and `phys_addr` is 0. When both publisher and subscriber `export FASTDDS_DMABUF_BACKEND=1`, hardware writes the carveout loan and `phys_addr` is non-zero. Cyclone DDS does not support that backend; `unset FASTDDS_DMABUF_BACKEND` before using it. `mmap`, `read`, and `userptr` can still be set explicitly; they are the legacy capture path.
 
 ## Resolution and pixel format
 
@@ -138,7 +141,7 @@ Before launch, use `v4l2-ctl` to confirm the camera **supports** the target reso
 
 ### Resolution and frame rate
 
-Override defaults (640×480 @ 15 fps) via launch arguments:
+Override defaults (built-in 640×480 configs are 30 fps) via launch arguments:
 
 ```bash
 # 1280×720 @ 30 fps, keep default yaml for everything else
@@ -290,7 +293,7 @@ Zero-copy mode does not publish `camera_info`.
 | `video_device` | Camera device path | string | `/dev/video0` |
 | `image_width` | Image width | int | `640` |
 | `image_height` | Image height | int | `480` |
-| `framerate` | Frame rate (integer) | int | `15` |
+| `framerate` | Frame rate (integer); empty keeps the yaml value | int | (empty; built-in 640×480 is `30`) |
 | `frame_id` | Frame id | string | `usb_cam` |
 | `pixel_format` | Override yaml pixel format | string | (empty, use yaml) |
 | `setup_shm` | Configure zero-copy DDS env (auto-detects `RMW_IMPLEMENTATION`; starts/stops `iox-roudi` for Cyclone) | bool | `true` |
@@ -307,7 +310,8 @@ Full launch args: `ros2 launch topsbot_usb_cam usb_cam.launch.py -s`
 | `video_device` | Device path | string | `/dev/video0` |
 | `image_width` | Image width | int | `640` |
 | `image_height` | Image height | int | `480` |
-| `framerate` | Frame rate | int | `15` |
+| `framerate` | Frame rate | int | `30` |
+| `io_method` | V4L2 capture method. Built-in yaml sets `dmabuf`; the node falls back to `mmap` when no yaml sets it | string | See yaml |
 | `pixel_format` | Pixel format | string | See `params_file` yaml |
 | `zero_copy` | Enable zero-copy | bool | See `params_file` yaml |
 | `frame_id` | TF frame name | string | `usb_cam` |

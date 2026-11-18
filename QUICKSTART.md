@@ -8,7 +8,7 @@ source /opt/tbros/humble/setup.bash   # 或 source install/setup.bash
 ros2 launch topsbot_usb_cam usb_cam.launch.py
 ```
 
-默认加载 `config/mjpeg2rgb_640x480_zc.yaml`（板端 RGB 零拷贝 640×480）。
+默认加载 `config/mjpeg2rgb_640x480_zc.yaml`（板端 RGB 零拷贝，V4L2 DMABUF，640×480 @ 30fps）。
 
 ## 2. 本包有哪些 launch？
 

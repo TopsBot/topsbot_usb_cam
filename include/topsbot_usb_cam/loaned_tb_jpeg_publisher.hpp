@@ -16,13 +16,17 @@
 #define TOPSBOT_USB_CAM__LOANED_TB_JPEG_PUBLISHER_HPP_
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
 #include "tb_img_msgs/msg/tb_jpeg_frame.hpp"
 #include "topsbot_usb_cam/topsbot_usb_cam.hpp"
+
+#include <unistd.h>
 
 #include <BufferAllocator/BufferAllocatorWrapper.h>
 
@@ -110,8 +114,218 @@ public:
     return true;
   }
 
+  /// DMABUF capture pool, POSIX SHM loan. Copy only the captured JPEG
+  /// (bytesused). The loan is not a carveout, so phys_addr stays 0 and the
+  /// capture fd is requeued after the copy.
+  bool publish_capture_copy(UsbCam * camera, int32_t & frame_index, const rclcpp::Logger & logger)
+  {
+    if (!publisher_ || !camera) {
+      return false;
+    }
+
+    int fd = -1;
+    unsigned int index = 0;
+    uint32_t bytes_used = 0;
+    const uint8_t * data = nullptr;
+    if (!camera->dequeue_dmabuf(fd, index, bytes_used, data)) {
+      return false;
+    }
+    struct Requeue
+    {
+      UsbCam * camera;
+      unsigned int index;
+      ~Requeue() {camera->requeue_dmabuf(index);}
+    } requeue{camera, index};
+    (void)fd;
+
+    if (bytes_used < 2 || data == nullptr || data[0] != 0xFF || data[1] != 0xD8) {
+      RCLCPP_WARN(logger, "capture DQBUF is not a JPEG frame (bytes=%u)", bytes_used);
+      return false;
+    }
+    if (bytes_used > tb_img_msgs::msg::TbJpegFrame::MAX_SIZE) {
+      RCLCPP_ERROR(
+        logger, "JPEG %u bytes exceeds TbJpegFrame MAX_SIZE %u",
+        bytes_used, tb_img_msgs::msg::TbJpegFrame::MAX_SIZE);
+      return false;
+    }
+
+    auto loaned = publisher_->borrow_loaned_message();
+    if (!loaned.is_valid()) {
+      RCLCPP_WARN(logger, "borrow_loaned_message failed for TbJpegFrame");
+      return false;
+    }
+    auto & msg = loaned.get();
+    std::memcpy(msg.data.data(), data, bytes_used);
+    msg.width = camera->get_image_width();
+    msg.height = camera->get_image_height();
+    fill_tb_jpeg_encoding(msg.encoding, "jpeg");
+    msg.data_size = bytes_used;
+    msg.phys_addr = 0;
+    const auto stamp = camera->get_image_timestamp();
+    msg.time_stamp.sec = stamp.tv_sec;
+    msg.time_stamp.nanosec = stamp.tv_nsec;
+    msg.index = frame_index++;
+    publisher_->publish(std::move(loaned));
+    return true;
+  }
+
+  /// Machine 2.2: each loan slot is QBUF'd. DQBUF publishes that same slot and
+  /// does not requeue it. The next frame borrows a new loan.
+  bool publish_loan_queue(UsbCam * camera, int32_t & frame_index, const rclcpp::Logger & logger)
+  {
+    if (!publisher_ || !camera) {
+      return false;
+    }
+    if (alloc_ == nullptr) {
+      alloc_ = CreateDmabufHeapBufferAllocator();
+    }
+    if (alloc_ == nullptr) {
+      RCLCPP_WARN(logger, "JPEG loan allocator failed");
+      return false;
+    }
+
+    const uint32_t sizeimage = camera->capture_sizeimage();
+    if (sizeimage == 0 || sizeimage > tb_img_msgs::msg::TbJpegFrame::MAX_SIZE) {
+      RCLCPP_ERROR(
+        logger, "sizeimage %u does not fit TbJpegFrame MAX_SIZE %u",
+        sizeimage, tb_img_msgs::msg::TbJpegFrame::MAX_SIZE);
+      return false;
+    }
+
+    while (queued_ < slots_.size()) {
+      if (!enqueue_loan(camera, sizeimage, logger)) {
+        break;
+      }
+    }
+    if (!streaming_) {
+      if (queued_ < slots_.size()) {
+        return true;
+      }
+      camera->start_import_stream();
+      streaming_ = true;
+    }
+    if (queued_ < 2) {
+      return true;
+    }
+
+    int fd = -1;
+    unsigned int index = 0;
+    uint32_t bytes_used = 0;
+    const uint8_t * data = nullptr;
+    if (!camera->dequeue_dmabuf(fd, index, bytes_used, data)) {
+      return false;
+    }
+    if (index >= slots_.size() || !slots_[index].queued || !slots_[index].loan) {
+      RCLCPP_ERROR(logger, "DQBUF index %u is not a queued loan", index);
+      return false;
+    }
+    slots_[index].queued = false;
+    if (queued_ > 0) {
+      --queued_;
+    }
+    const int lookup_fd = slots_[index].fd;
+    slots_[index].fd = -1;
+
+    auto loaned = std::move(*slots_[index].loan);
+    slots_[index].loan.reset();
+    if (lookup_fd >= 0) {
+      close(lookup_fd);
+    }
+
+    auto & msg = loaned.get();
+    if (bytes_used < 2 || msg.data[0] != 0xFF || msg.data[1] != 0xD8) {
+      RCLCPP_WARN(logger, "loan DQBUF is not a JPEG frame (bytes=%u)", bytes_used);
+      return false;
+    }
+    if (bytes_used > tb_img_msgs::msg::TbJpegFrame::MAX_SIZE) {
+      RCLCPP_ERROR(logger, "JPEG %u bytes exceeds TbJpegFrame", bytes_used);
+      return false;
+    }
+
+    msg.width = camera->get_image_width();
+    msg.height = camera->get_image_height();
+    fill_tb_jpeg_encoding(msg.encoding, "jpeg");
+    msg.data_size = bytes_used;
+    msg.phys_addr = slots_phys_[index];
+    const auto stamp = camera->get_image_timestamp();
+    msg.time_stamp.sec = stamp.tv_sec;
+    msg.time_stamp.nanosec = stamp.tv_nsec;
+    msg.index = frame_index++;
+    publisher_->publish(std::move(loaned));
+    return true;
+  }
+
 private:
+  bool enqueue_loan(UsbCam * camera, uint32_t sizeimage, const rclcpp::Logger & logger)
+  {
+    int free_index = -1;
+    for (size_t i = 0; i < slots_.size(); ++i) {
+      if (!slots_[i].queued) {
+        free_index = static_cast<int>(i);
+        break;
+      }
+    }
+    if (free_index < 0) {
+      return false;
+    }
+
+    auto loaned = publisher_->borrow_loaned_message();
+    if (!loaned.is_valid()) {
+      return false;
+    }
+    auto & msg = loaned.get();
+    volatile unsigned char * base = msg.data.data();
+    for (size_t off = 0; off < sizeimage; off += 4096) {
+      (void)base[off];
+    }
+
+    uint64_t phys = 0;
+    DmabufHeapLookupPhysByPtr(alloc_, msg.data.data(), &phys);
+    uint64_t len = sizeimage;
+    const int fd = phys == 0 ? -1 : DmabufHeapLookupByPhys(alloc_, phys, &len);
+    uint64_t got = 0;
+    uint64_t got_len = 0;
+    const int phys_rc = fd < 0 ? -1 : DmabufHeapGetPhysAddr(alloc_, fd, &got, &got_len);
+    if (fd < 0 || phys_rc != 0 || got != phys || got_len < sizeimage) {
+      if (fd >= 0) {
+        close(fd);
+      }
+      RCLCPP_ERROR(
+        logger,
+        "loan fd is not the data[] slice (lookup=0x%llx get=0x%llx len=%llu sizeimage=%u)",
+        static_cast<unsigned long long>(phys),
+        static_cast<unsigned long long>(got),
+        static_cast<unsigned long long>(got_len),
+        sizeimage);
+      return false;
+    }
+    if (!camera->queue_import_dmabuf(static_cast<unsigned int>(free_index), fd, sizeimage)) {
+      close(fd);
+      RCLCPP_ERROR(logger, "QBUF of JPEG loan fd failed");
+      return false;
+    }
+
+    slots_[free_index].fd = fd;
+    slots_[free_index].queued = true;
+    slots_phys_[free_index] = phys;
+    slots_[free_index].loan.emplace(std::move(loaned));
+    ++queued_;
+    return true;
+  }
+
+  struct Slot
+  {
+    int fd{-1};
+    bool queued{false};
+    std::optional<rclcpp::LoanedMessage<tb_img_msgs::msg::TbJpegFrame>> loan;
+  };
+
   rclcpp::Publisher<tb_img_msgs::msg::TbJpegFrame>::SharedPtr publisher_;
+  BufferAllocator * alloc_{nullptr};
+  std::array<Slot, 2> slots_{};
+  std::array<uint64_t, 2> slots_phys_{};
+  unsigned int queued_{0};
+  bool streaming_{false};
 };
 
 }  // namespace topsbot_usb_cam
